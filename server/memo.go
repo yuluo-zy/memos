@@ -102,15 +102,13 @@ func (s *Server) registerMemoRoutes(g *echo.Group) {
 			}
 		}
 
-		if s.Profile.IsDev() {
-			for _, memoRelationUpsert := range memoCreate.RelationList {
-				if _, err := s.Store.UpsertMemoRelation(ctx, &store.MemoRelationMessage{
-					MemoID:        memo.ID,
-					RelatedMemoID: memoRelationUpsert.RelatedMemoID,
-					Type:          store.MemoRelationType(memoRelationUpsert.Type),
-				}); err != nil {
-					return echo.NewHTTPError(http.StatusInternalServerError, "Failed to upsert memo relation").SetInternal(err)
-				}
+		for _, memoRelationUpsert := range memoCreate.RelationList {
+			if _, err := s.Store.UpsertMemoRelation(ctx, &store.MemoRelationMessage{
+				MemoID:        memo.ID,
+				RelatedMemoID: memoRelationUpsert.RelatedMemoID,
+				Type:          store.MemoRelationType(memoRelationUpsert.Type),
+			}); err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to upsert memo relation").SetInternal(err)
 			}
 		}
 
@@ -165,29 +163,31 @@ func (s *Server) registerMemoRoutes(g *echo.Group) {
 			return echo.NewHTTPError(http.StatusInternalServerError, "Failed to compose memo").SetInternal(err)
 		}
 
-		resourceIDList := make([]int, 0)
-		for _, resource := range memo.ResourceList {
-			resourceIDList = append(resourceIDList, resource.ID)
-		}
-		addedResourceIDList, removedResourceIDList := getIDListDiff(resourceIDList, memoPatch.ResourceIDList)
-		for _, resourceID := range addedResourceIDList {
-			if _, err := s.Store.UpsertMemoResource(ctx, &api.MemoResourceUpsert{
-				MemoID:     memo.ID,
-				ResourceID: resourceID,
-			}); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to upsert memo resource").SetInternal(err)
+		if memoPatch.ResourceIDList != nil {
+			resourceIDList := make([]int, 0)
+			for _, resource := range memo.ResourceList {
+				resourceIDList = append(resourceIDList, resource.ID)
 			}
-		}
-		for _, resourceID := range removedResourceIDList {
-			if err := s.Store.DeleteMemoResource(ctx, &api.MemoResourceDelete{
-				MemoID:     &memo.ID,
-				ResourceID: &resourceID,
-			}); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to delete memo resource").SetInternal(err)
+			addedResourceIDList, removedResourceIDList := getIDListDiff(resourceIDList, memoPatch.ResourceIDList)
+			for _, resourceID := range addedResourceIDList {
+				if _, err := s.Store.UpsertMemoResource(ctx, &api.MemoResourceUpsert{
+					MemoID:     memo.ID,
+					ResourceID: resourceID,
+				}); err != nil {
+					return echo.NewHTTPError(http.StatusInternalServerError, "Failed to upsert memo resource").SetInternal(err)
+				}
+			}
+			for _, resourceID := range removedResourceIDList {
+				if err := s.Store.DeleteMemoResource(ctx, &api.MemoResourceDelete{
+					MemoID:     &memo.ID,
+					ResourceID: &resourceID,
+				}); err != nil {
+					return echo.NewHTTPError(http.StatusInternalServerError, "Failed to delete memo resource").SetInternal(err)
+				}
 			}
 		}
 
-		if s.Profile.IsDev() {
+		if memoPatch.RelationList != nil {
 			patchMemoRelationList := make([]*api.MemoRelation, 0)
 			for _, memoRelationUpsert := range memoPatch.RelationList {
 				patchMemoRelationList = append(patchMemoRelationList, &api.MemoRelation{

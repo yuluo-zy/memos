@@ -13,8 +13,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/disintegration/imaging"
 	"github.com/labstack/echo/v4"
 	"github.com/pkg/errors"
 	"github.com/usememos/memos/api"
@@ -30,6 +32,9 @@ const (
 	// This is unrelated to maximum upload size limit, which is now set through system setting.
 	maxUploadBufferSizeBytes = 32 << 20
 	MebiByte                 = 1024 * 1024
+
+	// thumbnailImagePath is the directory to store image thumbnails.
+	thumbnailImagePath = ".thumbnail_cache"
 )
 
 var fileKeyPattern = regexp.MustCompile(`\{[a-z]{1,9}\}`)
@@ -161,14 +166,6 @@ func (s *Server) registerResourceRoutes(g *echo.Group) {
 			_, err = io.Copy(dst, sourceFile)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to copy file").SetInternal(err)
-			}
-
-			if filetype == "image/jpeg" || filetype == "image/png" {
-				thumbnailPath := path.Join(s.Profile.Data, common.ThumbnailDir, publicID)
-				err := common.ResizeImageFile(thumbnailPath, filePath, filetype)
-				if err != nil {
-					return echo.NewHTTPError(http.StatusInternalServerError, "Failed to generate thumbnail").SetInternal(err)
-				}
 			}
 
 			resourceCreate = &api.ResourceCreate{
@@ -323,14 +320,12 @@ func (s *Server) registerResourceRoutes(g *echo.Group) {
 		}
 
 		if resource.InternalPath != "" {
-			err := os.Remove(resource.InternalPath)
-			if err != nil {
+			if err := os.Remove(resource.InternalPath); err != nil {
 				log.Warn(fmt.Sprintf("failed to delete local file with path %s", resource.InternalPath), zap.Error(err))
 			}
 
-			thumbnailPath := path.Join(s.Profile.Data, common.ThumbnailDir, resource.PublicID)
-			err = os.Remove(thumbnailPath)
-			if err != nil {
+			thumbnailPath := path.Join(s.Profile.Data, thumbnailImagePath, resource.PublicID)
+			if err := os.Remove(thumbnailPath); err != nil {
 				log.Warn(fmt.Sprintf("failed to delete local thumbnail with path %s", thumbnailPath), zap.Error(err))
 			}
 		}
@@ -423,22 +418,6 @@ func (s *Server) registerResourcePublicRoutes(g *echo.Group) {
 		blob := resource.Blob
 		if resource.InternalPath != "" {
 			resourcePath := resource.InternalPath
-			if c.QueryParam("thumbnail") == "1" && (resource.Type == "image/jpeg" || resource.Type == "image/png") {
-				thumbnailPath := path.Join(s.Profile.Data, common.ThumbnailDir, resource.PublicID)
-				if _, err := os.Stat(thumbnailPath); err == nil {
-					resourcePath = thumbnailPath
-				} else if os.IsNotExist(err) {
-					err := common.ResizeImageFile(thumbnailPath, resourcePath, resource.Type)
-					if err != nil {
-						return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to resize resource: %s", resourcePath)).SetInternal(err)
-					}
-
-					resourcePath = thumbnailPath
-				} else {
-					return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to check resource thumbnail stat: %s", thumbnailPath)).SetInternal(err)
-				}
-			}
-
 			src, err := os.Open(resourcePath)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to open the local resource: %s", resourcePath)).SetInternal(err)
@@ -447,6 +426,17 @@ func (s *Server) registerResourcePublicRoutes(g *echo.Group) {
 			blob, err = io.ReadAll(src)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to read the local resource: %s", resourcePath)).SetInternal(err)
+			}
+		}
+
+		if c.QueryParam("thumbnail") == "1" && common.HasPrefixes(resource.Type, "image/png", "image/jpeg") {
+			ext := filepath.Ext(filename)
+			thumbnailPath := path.Join(s.Profile.Data, thumbnailImagePath, resource.PublicID+ext)
+			thumbnailBlob, err := getOrGenerateThumbnailImage(blob, thumbnailPath)
+			if err != nil {
+				log.Warn(fmt.Sprintf("failed to get or generate local thumbnail with path %s", thumbnailPath), zap.Error(err))
+			} else {
+				blob = thumbnailBlob
 			}
 		}
 
@@ -510,4 +500,49 @@ func replacePathTemplate(path string, filename string) string {
 		return s
 	})
 	return path
+}
+
+var availableGeneratorAmount int32 = 32
+
+func getOrGenerateThumbnailImage(srcBlob []byte, dstPath string) ([]byte, error) {
+	if _, err := os.Stat(dstPath); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, errors.Wrap(err, "failed to check thumbnail image stat")
+		}
+
+		if atomic.LoadInt32(&availableGeneratorAmount) <= 0 {
+			return nil, errors.New("not enough available generator amount")
+		}
+		atomic.AddInt32(&availableGeneratorAmount, -1)
+		defer func() {
+			atomic.AddInt32(&availableGeneratorAmount, 1)
+		}()
+
+		reader := bytes.NewReader(srcBlob)
+		src, err := imaging.Decode(reader)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to decode thumbnail image")
+		}
+		thumbnailImage := imaging.Resize(src, 512, 0, imaging.Lanczos)
+
+		dstDir := path.Dir(dstPath)
+		if err := os.MkdirAll(dstDir, os.ModePerm); err != nil {
+			return nil, errors.Wrap(err, "failed to create thumbnail dir")
+		}
+
+		if err := imaging.Save(thumbnailImage, dstPath); err != nil {
+			return nil, errors.Wrap(err, "failed to resize thumbnail image")
+		}
+	}
+
+	dstFile, err := os.Open(dstPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to open the local resource")
+	}
+	defer dstFile.Close()
+	dstBlob, err := io.ReadAll(dstFile)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read the local resource")
+	}
+	return dstBlob, nil
 }

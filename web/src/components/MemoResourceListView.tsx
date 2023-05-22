@@ -17,7 +17,7 @@ const getDefaultProps = (): Props => {
   };
 };
 
-const MemoResources: React.FC<Props> = (props: Props) => {
+const MemoResourceListView: React.FC<Props> = (props: Props) => {
   const { className, resourceList } = {
     ...getDefaultProps(),
     ...props,
@@ -46,7 +46,12 @@ const MemoResources: React.FC<Props> = (props: Props) => {
               if (resource.type.startsWith("image")) {
                 return (
                   <SquareDiv key={resource.id} className="memo-resource">
-                    <img src={absolutifyLink(url) + "?thumbnail=1"} onClick={() => handleImageClick(url)} decoding="async" loading="lazy" />
+                    <img
+                      src={resource.externalLink ? url : url + "?thumbnail=1"}
+                      onClick={() => handleImageClick(url)}
+                      decoding="async"
+                      loading="lazy"
+                    />
                   </SquareDiv>
                 );
               } else if (resource.type.startsWith("video")) {
@@ -75,4 +80,4 @@ const MemoResources: React.FC<Props> = (props: Props) => {
   );
 };
 
-export default MemoResources;
+export default MemoResourceListView;
