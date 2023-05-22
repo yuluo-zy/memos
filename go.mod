@@ -25,7 +25,10 @@ require (
 	golang.org/x/oauth2 v0.5.0
 )
 
-require golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
+require (
+	github.com/go-sql-driver/mysql v1.7.1 // indirect
+	golang.org/x/image v0.1.0 // indirect
+)
 
 require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.10 // indirect
