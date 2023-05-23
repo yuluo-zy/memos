@@ -23,6 +23,7 @@ type Profile struct {
 	DSN string `json:"-"`
 	// Version is the current version of server
 	Version string `json:"version"`
+	Mysql   string `json:"mysql"`
 }
 
 func (p *Profile) IsDev() bool {
@@ -62,7 +63,7 @@ func GetProfile() (*Profile, error) {
 		profile.Mode = "demo"
 	}
 
-	if profile.Mode == "prod" && profile.Data == "" {
+	if profile.Data == "" {
 		if runtime.GOOS == "windows" {
 			profile.Data = filepath.Join(os.Getenv("ProgramData"), "memos")
 

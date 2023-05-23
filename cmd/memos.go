@@ -35,6 +35,7 @@ var (
 	mode    string
 	port    int
 	data    string
+	mysql   string
 
 	rootCmd = &cobra.Command{
 		Use:   "memos",
@@ -118,6 +119,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&mode, "mode", "m", "demo", `mode of server, can be "prod" or "dev" or "demo"`)
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "p", 8081, "port of server")
 	rootCmd.PersistentFlags().StringVarP(&data, "data", "d", "", "data directory")
+	rootCmd.PersistentFlags().StringVarP(&mysql, "mysql", "y", "", "mysql data")
 
 	err := viper.BindPFlag("mode", rootCmd.PersistentFlags().Lookup("mode"))
 	if err != nil {
@@ -128,6 +130,10 @@ func init() {
 		panic(err)
 	}
 	err = viper.BindPFlag("data", rootCmd.PersistentFlags().Lookup("data"))
+	if err != nil {
+		panic(err)
+	}
+	err = viper.BindPFlag("mysql", rootCmd.PersistentFlags().Lookup("mysql"))
 	if err != nil {
 		panic(err)
 	}
@@ -157,6 +163,7 @@ func initConfig() {
 	println("port:", profile.Port)
 	println("mode:", profile.Mode)
 	println("version:", profile.Version)
+	println("mysql:", profile.Mysql)
 	println("---")
 }
 
