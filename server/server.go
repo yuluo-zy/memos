@@ -110,6 +110,7 @@ func NewServer(ctx context.Context, profile *profile.Profile) (*Server, error) {
 	s.registerIdentityProviderRoutes(apiGroup)
 	s.registerOpenAIRoutes(apiGroup)
 	s.registerMemoRelationRoutes(apiGroup)
+	s.registerUtilityBillRoutes(apiGroup, profile.Mysql)
 
 	return s, nil
 }

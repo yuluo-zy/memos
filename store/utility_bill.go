@@ -11,8 +11,8 @@ type UtilityBill struct {
 	createdAt   string
 }
 
-func findUtilityBill() (UtilityBill, error) {
-	db, err := sql.Open("mysql", "用户名:密码@tcp(localhost:3306)/数据库名")
+func FindUtilityBill(mysqlUrl string) (UtilityBill, error) {
+	db, err := sql.Open("mysql", mysqlUrl)
 	if err != nil {
 		panic(err.Error())
 	}
